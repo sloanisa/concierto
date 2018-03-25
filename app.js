@@ -24,17 +24,24 @@ var database = require('./controllers/database');
 
 var db = new database.Database();
 app.get('/', function (req, res){
-    res.write("<html><body>");
+    res.write("<html><body><h1>Concert Craze</h1>");
     if(req.session.msg){
         res.write(req.session.msg);
         delete req.session.msg;
     }
     
 res.write(`
+    <br>
     <form method=post action='/login'>
     <input type=text id=username name=username>
     <input type=password name=password>
     <input type=submit value=Login>
+    </form>
+    <br>
+    <form method=post action='/createAccount'>
+    <input type=text id=username name=username>
+    <input type=password name=password>
+    <input type=submit value=Create Account>
     </form>
     </body>
     </html>`);
@@ -55,6 +62,15 @@ app.post('/login', function (req, res){
     });
     
     db.login(req.body.username, req.body.password);
+});
+
+app.post('/createAccount', function (req, res){
+    db.once('accountCreated', function(msg){
+            req.session.msg = "Account Created!";
+            return res.redirect('/');
+    });
+    
+    db.createAccount(req.body.username, req.body.password);
 });
 
 app.get('/main', function(req,res){
@@ -184,10 +200,214 @@ app.post('/editEntry', function(req,res){
     db.once('gotEntry', function(rows){
         var str = "Edit this entry, " + req.session.userid + "<br><br>";
         for(var i=0; i < rows.length; i++){
-            str+="<br><div class=concert-entry><form method=post action='/saveEdit'>Artist: <input type=text name=headliner value='"+ rows[i].headliner +"'><br> Supporting Act: <input type=text name=supporting_act value='"+ rows[i].supporting_act +"'> <br> Date: <input type=text name=concertDate value=" + rows[i].concert_date + "><br> Time: <input type=text name=concertTime value='" + rows[i].concert_time + "'><br> Venue: <input type=text name=venue value='"+ rows[i].venue + "'><br>Entry: <textarea type=text name=entry value='"+ rows[i].entry +"'></textarea><br><input type=submit value='Save'></form><form method=post action='/deleteEntry'><input type=hidden name=headliner value='"+ rows[i].headliner +"'><input type=hidden name=concertDate value=" + rows[i].concert_date + "><input type=submit value='Delete'></form></div>"
+            str+="<br><div class=concert-entry><form method=post action='/saveEdit'>Artist: <input type=text name=headliner value='"+ rows[i].headliner +"'><br> Supporting Act: <input type=text name=supporting_act value='"+ rows[i].supporting_act +"'> <br> Date: <input type=text name=concertDate value=" + rows[i].concert_date + "><br> Time: <input type=text name=concertTime value='" + rows[i].concert_time + "'><br> Venue: <input type=text name=venue value='"+ rows[i].venue + "'><br>Entry: <textarea type=text name=entry value='"+ rows[i].entry +"'></textarea><br><input type=submit value='Save'></form><form method=post action='/deleteEntry'><input type=hidden name=headliner value='"+ rows[i].headliner +"'><input type=hidden name=concertDate value=" + rows[i].concert_date + "><input type=submit value='Delete'></form><button id='login-button' class='btn btn-primary'>Get Song Recommendations for " + rows[i].headliner + "! <br> Connect to Spotify</button><br><br> <a href='http://localhost:8888/main'>Back to Main</a></div>"
         }
        
-        res.send("<html><script src='http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js'></script><script src='http://ajax.googleapis.com/ajax/libs/jquerymobile/1.4.5/jquery.mobile.min.js'></script><script>function getAccessToken(){var URL = 'http://localhost:8888/getConcertInfo';var artist = $('#artist').val();$.ajax({type: 'POST',url : URL,data : {data: artist},dataType : 'text',success : function(msg){$('#results').html(msg);},error: function(jgXHR, textStatus,errorThrown){alert('Error: ' + textStatus + ' '  + errorThrown);}});} </script><head></head><body>" + str + "</body></html>");
+        res.send(`<html><script src='http://ajax.googleapis.com/ajax/libs/jquery/2.1.1/jquery.min.js'></script><script src='http://ajax.googleapis.com/ajax/libs/jquerymobile/1.4.5/jquery.mobile.min.js'></script><head></head><body>` + str + `</body><script>(function() {
+
+                var stateKey = 'spotify_auth_state';
+
+                /**
+                 * Obtains parameters from the hash of the URL
+                 * @return Object
+                 */
+                function getHashParams() {
+                  var hashParams = {};
+                  var e, r = /([^&;=]+)=?([^&;]*)/g,
+                      q = window.location.hash.substring(1);
+                  while ( e = r.exec(q)) {
+                     hashParams[e[1]] = decodeURIComponent(e[2]);
+                  }
+                  return hashParams;
+                }
+
+                /**
+                 * Generates a random string containing numbers and letters
+                 * @param  {number} length The length of the string
+                 * @return {string} The generated string
+                 */
+                function generateRandomString(length) {
+                  var text = '';
+                  var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+                  for (var i = 0; i < length; i++) {
+                    text += possible.charAt(Math.floor(Math.random() * possible.length));
+                  }
+                  return text;
+                };
+
+                var artistID;
+                var relatedArtist1;
+                var relatedArtist2;
+                var relatedArtist3;
+                var topTrack1;
+                var topTrack2;
+                var topTrack3;
+
+                var params = getHashParams();
+
+                var access_token = params.access_token,
+                    state = params.state,
+                    storedState = localStorage.getItem(stateKey);
+
+                if (access_token && (state == null || state !== storedState)) {
+                  alert('There was an error during the authentication');
+                } else {
+                  localStorage.removeItem(stateKey);
+                  if (access_token) {
+
+                    //DEFINE THE ELEMENTS
+                    var que = document.getElementById('query');
+
+                    //LISTENERS
+                    //listen for input in form
+                    que.addEventListener('input', function (e) {
+                      console.log(this.value);
+                    }, false);
+                    //listen for sumbit, send value to getArtist
+                    document.getElementById('search-form').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    getArtist(que.value);
+                    }, false);
+
+
+                    //pulls authorized account information
+                    $.ajax({
+                        url: 'https://api.spotify.com/v1/me',
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token
+                        },
+                        success: function(response) {
+
+                          console.log('aye got that token');
+                          
+
+                          $('#login').hide();
+                          $('#loggedin').show();
+
+                        }
+                    });
+
+                    //search request
+                    var getArtist = function (query) {
+
+                    $.ajax({
+                        url: 'https://api.spotify.com/v1/search',
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                        data: {
+                            q: query,
+                            offset: 0,
+                            limit: 3,
+                            type: 'artist'
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                          for (var i=0; i<1; i++) {
+                          console.log(i);
+                          if (json.artists.items[i]){
+                          artistID = json.artists.items[i].id;
+
+                        console.log("Artist ID: " + artistID);
+
+                          }
+                        } 
+                        searchRelatedArtists();
+
+                        }
+                    });
+                    console.log('hello');
+                    console.log(query);
+                };
+                      //search for related artists request
+                    var searchRelatedArtists = function () {
+
+                    var URL = 'https://api.spotify.com/v1/artists/' + artistID + '/related-artists'
+                    $.ajax({
+                        url: URL,
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                        relatedArtist1 = json.artists[6].id;
+                        relatedArtist2 = json.artists[13].id;
+                        relatedArtist3 = json.artists[19].id;
+
+                        console.log("related artist ids: " + relatedArtist1 + " " + relatedArtist2 + " " + relatedArtist3);
+
+                        getTopTracks(relatedArtist1);
+                        getTopTracks(relatedArtist2);
+                        getTopTracks(relatedArtist3);
+
+                        } 
+                        })
+                    };
+
+                                    //search for related artists request
+                    var getTopTracks = function (id) {
+
+                    var URL = 'https://api.spotify.com/v1/artists/' + id + '/top-tracks'
+                    $.ajax({
+                        url: URL,
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                         data: {
+                            country: 'US'
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                        var artistName = json.tracks[7].album.artists["0"].name;
+                        var albumName = json.tracks[7].album.name;
+                        var trackName = json.tracks[7].name;
+                        var trackSRC = json.tracks[7].external_urls.spotify;
+                        var imgSRC = json.tracks[7].album.images[1].url;
+        //
+                          $('#results').after("<div><a href='" + trackSRC + "'><img src='" + imgSRC + "'></a><li>" + trackName + "</li><li>" + artistName + "</li><li>" + albumName + "</li></div>");
+
+                        } 
+                        })
+                    };
+
+                  } else {
+                      $('#login').show();
+                      $('#loggedin').hide();
+                  }
+
+                  document.getElementById('login-button').addEventListener('click', function() {
+
+                    var client_id = 'f77925f0471243af97142794fd2efe1d'; // Your client id
+                    var redirect_uri = 'http://localhost:8888/getRecs'; // Your redirect uri
+
+                    var state = generateRandomString(16);
+
+                    localStorage.setItem(stateKey, state);
+                    var scope = 'user-read-private user-read-email';
+
+                    var url = 'https://accounts.spotify.com/authorize';
+                    url += '?response_type=token';
+                    url += '&client_id=' + encodeURIComponent(client_id);
+                    url += '&scope=' + encodeURIComponent(scope);
+                    url += '&redirect_uri=' + encodeURIComponent(redirect_uri);
+                    url += '&state=' + encodeURIComponent(state);
+
+                    window.location = url;
+                  }, false);
+                }
+              }) ();
+            function getAccessToken(){var URL = 'http://localhost:8888/getConcertInfo';var artist = $('#artist').val();$.ajax({type: 'POST',url : URL,data : {data: artist},dataType : 'text',success : function(msg){$('#results').html(msg);},error: function(jgXHR, textStatus,errorThrown){alert('Error: ' + textStatus + ' '  + errorThrown);}});}                   
+            </script></html>`);
     });
     
     //get current user's id in the database
@@ -244,4 +464,268 @@ app.post('/deleteEntry', function(req,res){
     //get current user's id in the database
     db.getId(user);
 
+});
+
+app.get('/getRecs', function(req, res){
+    console.log('hello');
+   var artist = req.query.headliner;
+    console.log(artist);
+    res.send(`
+        <html>
+          <head>
+            <title>Recommended Track</title>
+            <link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css">
+            <style type="text/css">
+              #login, #loggedin {
+                display: none;
+              }
+              .text-overflow {
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                width: 500px;
+              }
+
+            </style>
+          </head>
+
+          <body>
+            <div class="container">
+              <div id="login">
+                <button id="login-button" class="btn btn-primary">Connect to Spotify</button>
+              </div>
+              <div id="loggedin">
+                <div id="user-profile">
+                </div>
+                <div id="oauth">
+                </div>
+              </div>
+            </div>
+
+
+            <form id="search-form"> 
+              <input type='text' id="query" placeholder="Input Artist Name">
+              <input type="submit" id="search" class="btn btn-primary" value="Get Recs">
+            </form>
+
+            <div id="results"></div>
+                <a href="http://localhost:8888/main">Back to Main</a>
+            <script src="//cdnjs.cloudflare.com/ajax/libs/handlebars.js/2.0.0-alpha.1/handlebars.min.js"></script>
+            <script src="https://code.jquery.com/jquery-1.10.1.min.js"></script>
+            <script>
+                localStorage.setItem('theArtist', $('#query').val);
+
+                if ($('#query').val == undefined){
+                        $('#query').val = localStorage.getItem('theArtist');
+                }
+               
+              (function() {
+
+                var stateKey = 'spotify_auth_state';
+
+                /**
+                 * Obtains parameters from the hash of the URL
+                 * @return Object
+                 */
+                function getHashParams() {
+                  var hashParams = {};
+                  var e, r = /([^&;=]+)=?([^&;]*)/g,
+                      q = window.location.hash.substring(1);
+                  while ( e = r.exec(q)) {
+                     hashParams[e[1]] = decodeURIComponent(e[2]);
+                  }
+                  return hashParams;
+                }
+
+                /**
+                 * Generates a random string containing numbers and letters
+                 * @param  {number} length The length of the string
+                 * @return {string} The generated string
+                 */
+                function generateRandomString(length) {
+                  var text = '';
+                  var possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+
+                  for (var i = 0; i < length; i++) {
+                    text += possible.charAt(Math.floor(Math.random() * possible.length));
+                  }
+                  return text;
+                };
+
+                var artistID;
+                var relatedArtist1;
+                var relatedArtist2;
+                var relatedArtist3;
+                var topTrack1;
+                var topTrack2;
+                var topTrack3;
+
+                var params = getHashParams();
+
+                var access_token = params.access_token,
+                    state = params.state,
+                    storedState = localStorage.getItem(stateKey);
+
+                if (access_token && (state == null || state !== storedState)) {
+                  alert('There was an error during the authentication');
+                } else {
+                  localStorage.removeItem(stateKey);
+                  if (access_token) {
+
+                    //DEFINE THE ELEMENTS
+                    var que = document.getElementById('query');
+
+                    //LISTENERS
+                    //listen for input in form
+                    que.addEventListener('input', function (e) {
+                      console.log(this.value);
+                    }, false);
+                    //listen for sumbit, send value to getArtist
+                    document.getElementById('search-form').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    getArtist(que.value);
+                    }, false);
+
+
+                    //pulls authorized account information
+                    $.ajax({
+                        url: 'https://api.spotify.com/v1/me',
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token
+                        },
+                        success: function(response) {
+
+                          console.log('aye got that token');
+                          
+
+                          $('#login').hide();
+                          $('#loggedin').show();
+
+                        }
+                    });
+
+                    //search request
+                    var getArtist = function (query) {
+
+                    $.ajax({
+                        url: 'https://api.spotify.com/v1/search',
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                        data: {
+                            q: query,
+                            offset: 0,
+                            limit: 3,
+                            type: 'artist'
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                          for (var i=0; i<1; i++) {
+                          console.log(i);
+                          if (json.artists.items[i]){
+                          artistID = json.artists.items[i].id;
+
+                        console.log("Artist ID: " + artistID);
+
+                          }
+                        } 
+                        searchRelatedArtists();
+
+                        }
+                    });
+                    console.log('hello');
+                    console.log(query);
+                };
+                      //search for related artists request
+                    var searchRelatedArtists = function () {
+
+                    var URL = 'https://api.spotify.com/v1/artists/' + artistID + '/related-artists'
+                    $.ajax({
+                        url: URL,
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                        relatedArtist1 = json.artists[6].id;
+                        relatedArtist2 = json.artists[13].id;
+                        relatedArtist3 = json.artists[19].id;
+
+                        console.log("related artist ids: " + relatedArtist1 + " " + relatedArtist2 + " " + relatedArtist3);
+
+                        getTopTracks(relatedArtist1);
+                        getTopTracks(relatedArtist2);
+                        getTopTracks(relatedArtist3);
+
+                        } 
+                        })
+                    };
+
+                                    //search for related artists request
+                    var getTopTracks = function (id) {
+
+                    var URL = 'https://api.spotify.com/v1/artists/' + id + '/top-tracks'
+                    $.ajax({
+                        url: URL,
+                        headers: {
+                          'Authorization': 'Bearer ' + access_token  
+                        },
+                         data: {
+                            country: 'US'
+                        },
+                        success: function (response) {
+                          console.log(response);
+                          $('#results').html("");
+                          var json = response;
+
+                        var artistName = json.tracks[7].album.artists["0"].name;
+                        var albumName = json.tracks[7].album.name;
+                        var trackName = json.tracks[7].name;
+                        var trackSRC = json.tracks[7].external_urls.spotify;
+                        var imgSRC = json.tracks[7].album.images[1].url;
+        //
+                          $('#results').after("<div><a href='" + trackSRC + "'><img src='" + imgSRC + "'></a><li>" + trackName + "</li><li>" + artistName + "</li><li>" + albumName + "</li></div>");
+
+                        } 
+                        })
+                    };
+
+                  } else {
+                      $('#login').show();
+                      $('#loggedin').hide();
+                  }
+
+                  document.getElementById('login-button').addEventListener('click', function() {
+
+                    var client_id = 'f77925f0471243af97142794fd2efe1d'; // Your client id
+                    var redirect_uri = 'http://localhost:8888/getRecs'; // Your redirect uri
+
+                    var state = generateRandomString(16);
+
+                    localStorage.setItem(stateKey, state);
+                    var scope = 'user-read-private user-read-email';
+
+                    var url = 'https://accounts.spotify.com/authorize';
+                    url += '?response_type=token';
+                    url += '&client_id=' + encodeURIComponent(client_id);
+                    url += '&scope=' + encodeURIComponent(scope);
+                    url += '&redirect_uri=' + encodeURIComponent(redirect_uri);
+                    url += '&state=' + encodeURIComponent(state);
+
+                    window.location = url;
+                  }, false);
+                }
+              })();
+            </script>
+        </html>
+
+    `);
+
+    
 });

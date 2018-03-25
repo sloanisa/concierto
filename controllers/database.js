@@ -38,6 +38,25 @@ constructor(){super();}
                 }
         });
     }
+    
+    createAccount (username,password){
+        var str = "INSERT INTO user_accounts (username, password) VALUES ("+con.escape(username)
+        + ", PASSWORD("+ con.escape(password) +"));";
+        console.log(str);
+        var self = this;
+        //console.log("str: " + str);
+        con.query(str, function(err, rows, fields){
+            if(err){
+                console.log('Error' + err);
+                return 0;
+            }
+            else{
+                    self.emit('accountCreated');
+            }
+
+        });
+    }
+    
     displayEntries (id){
         var str = "SELECT * FROM concert_info WHERE user_id="+ con.escape(id) + " order by concert_date ASC;";
         var self = this;
