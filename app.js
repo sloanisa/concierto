@@ -11,7 +11,7 @@ app.use(bodyParser.urlencoded({extended: true}));
 var session = require('client-sessions');
 app.use(session({
 cookieName: 'session',
-secret: '!PH@r0S!',
+secret: '',
 duration: 30 * 60 * 1000,
 activeDuration: 5 * 60 * 1000
 }));
